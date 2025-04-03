@@ -1,8 +1,6 @@
 import os
 import re
 import spacy
-import json
-import chromadb
 from datetime import datetime
 from collections import defaultdict
 from langchain.text_splitter import RecursiveCharacterTextSplitter
