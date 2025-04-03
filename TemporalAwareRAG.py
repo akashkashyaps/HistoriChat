@@ -253,7 +253,7 @@ def retrieve_historical_facts(query):
     return results
 
 # Example usage
-query = "What did William the Conqueror do before 1066?"
+query = "What did William do before 1066?"
 retrieved_docs = retrieve_historical_facts(query)
 
 print(f"Results for query: '{query}'\n")
