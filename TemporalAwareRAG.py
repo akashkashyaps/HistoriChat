@@ -192,21 +192,40 @@ def retrieve_historical_facts(query):
     # Parse query metadata
     parsed_query = parse_query(query)
     search_filter = {}
+    conditions = []
 
     # Apply filters based on extracted data
     if parsed_query["entities"]["PERSON"]:
-        search_filter["entities.PERSON"] = {"$contains": parsed_query["entities"]["PERSON"][0]}
+        conditions.append({
+            "entities.PERSON": {"$contains": parsed_query["entities"]["PERSON"][0]}
+        })
+    
     if parsed_query["entities"]["EVENT"]:
-        search_filter["entities.EVENT"] = {"$contains": parsed_query["entities"]["EVENT"][0]}
+        conditions.append({
+            "entities.EVENT": {"$contains": parsed_query["entities"]["EVENT"][0]}
+        })
+
+    # Handle temporal filters
     if parsed_query["years"]:
         year = parsed_query["years"][0]
         if "before" in parsed_query["temporal_keywords"]:
-            search_filter["start_year"] = {"$lt": year}
+            conditions.append({"start_year": {"$lt": year}})
         elif "after" in parsed_query["temporal_keywords"]:
-            search_filter["start_year"] = {"$gt": year}
+            conditions.append({"start_year": {"$gt": year}})
         elif "during" in parsed_query["temporal_keywords"]:
-            search_filter["start_year"] = {"$lte": year}
-            search_filter["end_year"] = {"$gte": year}
+            conditions.append({
+                "$and": [
+                    {"start_year": {"$lte": year}},
+                    {"end_year": {"$gte": year}}
+                ]
+            })
+
+    # Combine conditions with logical AND
+    if conditions:
+        if len(conditions) == 1:
+            search_filter = conditions[0]
+        else:
+            search_filter = {"$and": conditions}
 
     # Load ChromaDB
     home_directory = os.path.expanduser("~")
@@ -218,17 +237,23 @@ def retrieve_historical_facts(query):
         collection_name="HC-1"
     )
     
-    # Use LangChain Retriever
+    # Use LangChain Retriever with constructed filter
     retriever = vectorstore.as_retriever(
         search_type="similarity", 
-        search_kwargs={"k": 10, "filter": search_filter}
+        search_kwargs={
+            "k": 10,
+            "filter": search_filter if search_filter else None
+        }
     )
     
     results = retriever.invoke(query)
 
-    # Sort results if query asks for "first, second, third"
+    # Sort results chronologically if requested
     if "ordered" in parsed_query["temporal_keywords"]:
-        results = sorted(results, key=lambda doc: doc.metadata.get("start_year", 9999))
+        results = sorted(
+            results, 
+            key=lambda doc: doc.metadata.get("start_year", 9999)
+        )
 
     return results
 
