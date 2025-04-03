@@ -191,18 +191,17 @@ def retrieve_historical_facts(query):
     """
     # Parse query metadata
     parsed_query = parse_query(query)
-    search_filter = {}
     conditions = []
 
-    # Apply filters based on extracted data
+    # Apply entity filters using $in operator
     if parsed_query["entities"]["PERSON"]:
         conditions.append({
-            "entities.PERSON": {"$contains": parsed_query["entities"]["PERSON"][0]}
+            "entities.PERSON": {"$in": [parsed_query["entities"]["PERSON"][0]]}
         })
     
     if parsed_query["entities"]["EVENT"]:
         conditions.append({
-            "entities.EVENT": {"$contains": parsed_query["entities"]["EVENT"][0]}
+            "entities.EVENT": {"$in": [parsed_query["entities"]["EVENT"][0]]}
         })
 
     # Handle temporal filters
@@ -220,12 +219,8 @@ def retrieve_historical_facts(query):
                 ]
             })
 
-    # Combine conditions with logical AND
-    if conditions:
-        if len(conditions) == 1:
-            search_filter = conditions[0]
-        else:
-            search_filter = {"$and": conditions}
+    # Combine conditions
+    search_filter = {"$and": conditions} if conditions else {}
 
     # Load ChromaDB
     home_directory = os.path.expanduser("~")
@@ -237,18 +232,18 @@ def retrieve_historical_facts(query):
         collection_name="HC-1"
     )
     
-    # Use LangChain Retriever with constructed filter
+    # Use LangChain Retriever
     retriever = vectorstore.as_retriever(
         search_type="similarity", 
         search_kwargs={
             "k": 10,
-            "filter": search_filter if search_filter else None
+            "filter": search_filter if conditions else None
         }
     )
     
     results = retriever.invoke(query)
 
-    # Sort results chronologically if requested
+    # Sort results if query asks for chronological order
     if "ordered" in parsed_query["temporal_keywords"]:
         results = sorted(
             results, 
