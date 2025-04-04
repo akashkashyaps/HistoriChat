@@ -125,7 +125,8 @@ if __name__ == "__main__":
         vectorstore = Chroma.from_documents(
             documents=docs,
             embedding=OllamaEmbeddings(model="nomic-embed-text"),
-            persist_directory=PERSIST_DIR
+            persist_directory=PERSIST_DIR,
+            collection_name="HC-3"
         )
     else:
         vectorstore = Chroma(
