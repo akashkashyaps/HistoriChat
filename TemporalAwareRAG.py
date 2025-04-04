@@ -69,6 +69,20 @@ def chunk_by_timeline(text, chunk_size=1000, max_gap=20):
     return enriched_chunks
 
 # --- Store in ChromaDB ---
+def sanitize_metadata(metadata):
+    """Sanitize metadata to ensure Chroma-compatible types."""
+    safe_metadata = {}
+    for k, v in metadata.items():
+        if isinstance(v, (str, int, float, bool)):
+            safe_metadata[k] = v
+        elif isinstance(v, list):
+            safe_metadata[k] = ", ".join(map(str, v))
+        elif v is None:
+            safe_metadata[k] = ""
+        else:
+            safe_metadata[k] = str(v)
+    return safe_metadata
+
 def process_and_store_in_chromadb(folder_path):
     texts = load_text_files(folder_path)
     all_documents = []
@@ -84,7 +98,10 @@ def process_and_store_in_chromadb(folder_path):
                 "years": chunk["years"],
                 "person": extract_entities(chunk["text"]).get("person", []),
             }
-            all_documents.append({"text": chunk["text"], "metadata": metadata})
+
+            sanitized = sanitize_metadata(metadata)
+            print("[DEBUG] Adding document with metadata:", sanitized)
+            all_documents.append({"text": chunk["text"], "metadata": sanitized})
 
     persist_directory = os.path.expanduser("~/HistoriChat")
     vectorstore = Chroma(
@@ -94,11 +111,11 @@ def process_and_store_in_chromadb(folder_path):
     )
 
     for doc in all_documents:
-        print("[DEBUG] Adding document with metadata:", doc["metadata"])
         vectorstore.add_texts([doc["text"]], metadatas=[doc["metadata"]])
 
     print(f"[INFO] Stored {len(all_documents)} documents.")
     return vectorstore
+
 
 # --- Parse Query ---
 def parse_query(query):
