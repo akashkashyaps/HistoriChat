@@ -172,31 +172,48 @@ if __name__ == "__main__":
     DATA_DIR = "/home/akash/HistoriChat/data"
     home_directory = os.path.expanduser("~")
     PERSIST_DIR = os.path.join(home_directory, "Historichat")
+
+    # Debug paths
+    print("\n=== Path Verification ===")
+    print(f"Data directory exists: {os.path.exists(DATA_DIR)}")
+    print(f"Persist directory exists: {os.path.exists(PERSIST_DIR)}")
     
     # Initialize vectorstore
     if not os.path.exists(PERSIST_DIR):
+        print("\n=== Processing Documents ===")
         docs = process_documents(DATA_DIR)
+        print(f"Processed {len(docs)} documents")
+        
         vectorstore = Chroma.from_documents(
             documents=docs,
             embedding=OllamaEmbeddings(model="nomic-embed-text"),
             persist_directory=PERSIST_DIR,
             collection_name="HC-2"
         )
+        print("Created new vectorstore")
     else:
+        print("\n=== Loading Existing Vectorstore ===")
         vectorstore = Chroma(
             persist_directory=PERSIST_DIR,
-            embedding_function=OllamaEmbeddings(model="nomic-embed-text"),
-            collection_name="HC-2"
+            embedding_function=OllamaEmbeddings(model="nomic-embed-text")
         )
-    
-    # Example query
-    results = retrieve("What did William the Conqueror do in 1066", vectorstore)
-    
+        print(f"Existing collection contains {vectorstore._collection.count()} documents")
+
+    # Test query
+    print("\n=== Testing Query ===")
+    test_query = "What did William the Conqueror do in 1066"
+    print("Running query:", test_query)
+    results = retrieve(test_query, vectorstore)
+    print(f"Found {len(results)} results")
+
     # Display results
-    for i, doc in enumerate(results):
-        print(f"\nResult {i+1}:")
-        print(f"Source: {doc.metadata['source']}")
-        print(f"Year: {doc.metadata.get('year', 'N/A')}")
-        print(f"People: {doc.metadata.get('people', 'N/A')}")
-        print(f"Locations: {doc.metadata.get('locations', 'N/A')}")
-        print(f"Text: {doc.page_content[:300]}...")
+    if results:
+        print("\n=== Results ===")
+        for i, doc in enumerate(results):
+            print(f"\nResult {i+1}:")
+            print(f"Source: {doc.metadata['source']}")
+            print(f"Year: {doc.metadata.get('year', 'N/A')}")
+            print(f"People: {doc.metadata.get('people', 'N/A')}")
+            print(f"Text: {doc.page_content[:300]}...")
+    else:
+        print("\nNo results found for query")
