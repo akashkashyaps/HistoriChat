@@ -192,9 +192,7 @@ if __name__ == "__main__":
         ("Year-based query 1", "What did William the Conqueror do in 1066"),
         ("Year-based query 2", "What happened during the Battle of Hastings in 1066"),
         ("Entity-based query 1", "What were Boudica's major military strategies?"),
-        ("Entity-based query 2", "How did Alfred the Great reform the education system?"),
-        ("Mixed query 1", "Anglo-Saxon settlements before 900 AD"),
-        ("Mixed query 2", "Viking invasions after 800")
+        ("Entity-based query 2", "Tell me about Alfred childhood")
     ]
 
     # Run all test queries
