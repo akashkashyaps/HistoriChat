@@ -5,17 +5,16 @@ from langchain.schema import Document
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 
-# Initialize Spacy NLP
+# Initialize Spacy for query parsing only
 nlp = spacy.load("en_core_web_sm")
 
 # --- Configuration ---
-MAX_CHUNK_GAP = 1000  # Max characters between dates to consider same context
-DEFAULT_YEAR = 0       # For undated sections (changed from 0000 for numeric consistency)
-TOP_K = 10              # Number of results to return
+MAX_CHUNK_GAP = 1000
+DEFAULT_YEAR = 0
+TOP_K = 5
 
 # --- Text Loading ---
 def load_texts(folder_path):
-    """Load all .txt files from a directory"""
     texts = {}
     for file in os.listdir(folder_path):
         if file.endswith('.txt'):
@@ -25,23 +24,17 @@ def load_texts(folder_path):
 
 # --- Date-Based Chunking ---
 def chunk_by_dates(text):
-    """
-    Creates chunks anchored to the first date found, continuing until
-    a new date appears or MAX_CHUNK_GAP is reached
-    """
     chunks = []
     current_chunk = []
     current_year = DEFAULT_YEAR
     pos = 0
     
-    # Find all year mentions
     year_matches = list(re.finditer(r'\b(1[0-9]{3}|20[0-9]{2})\b', text))
     
     for i, match in enumerate(year_matches):
         year = int(match.group())
         start = match.start()
         
-        # Start new chunk if year changes or gap too large
         if current_year != DEFAULT_YEAR and (year != current_year or start - pos > MAX_CHUNK_GAP):
             chunks.append(create_chunk(current_chunk, current_year, pos, start))
             current_chunk = []
@@ -51,7 +44,6 @@ def chunk_by_dates(text):
         current_chunk.append(text[pos:match.end()])
         pos = match.end()
         
-    # Add remaining text
     if pos < len(text):
         current_chunk.append(text[pos:])
     if current_chunk:
@@ -60,7 +52,6 @@ def chunk_by_dates(text):
     return chunks
 
 def create_chunk(chunks, year, start, end):
-    """Helper to format chunk dictionaries"""
     return {
         "text": "".join(chunks).strip(),
         "year": year,
@@ -68,112 +59,67 @@ def create_chunk(chunks, year, start, end):
         "end": end
     }
 
-# --- Entity Extraction ---
-def extract_entities(text):
-    """Extract people and locations using Spacy"""
-    doc = nlp(text)
-    return {
-        "people": list(set(ent.text for ent in doc.ents if ent.label_ == "PERSON")),
-        "locations": list(set(ent.text for ent in doc.ents if ent.label_ == "GPE"))
-    }
-
 # --- Document Processing ---
 def process_documents(folder_path):
-    """Main processing pipeline"""
     texts = load_texts(folder_path)
     all_docs = []
     
     for filename, content in texts.items():
         chunks = chunk_by_dates(content)
         for chunk in chunks:
-            entities = extract_entities(chunk["text"])
-            metadata = {
-                "source": filename,
-                "year": chunk["year"],
-                "people": entities["people"],
-                "locations": entities["locations"]
-            }
             all_docs.append(Document(
                 page_content=chunk["text"],
-                metadata=clean_metadata(metadata)
+                metadata={
+                    "source": filename,
+                    "year": chunk["year"]
+                }
             ))
     
     return all_docs
 
-def clean_metadata(meta):
-    """Ensure metadata values are Chroma compatible"""
-    cleaned = {}
-    for key, value in meta.items():
-        if isinstance(value, list):
-            # Convert lists to comma-separated strings
-            cleaned[key] = ", ".join(value)
-        elif isinstance(value, (str, int, float, bool)):
-            cleaned[key] = value
-        else:
-            cleaned[key] = str(value)
-    return cleaned
-
 # --- Query Handling ---
 def parse_query(query):
-    """Analyze user query for entities and dates"""
     doc = nlp(query)
+    years = [int(y) for y in re.findall(r'\b(1[0-9]{3}|20[0-9]{2})\b', query)]
+    
     return {
-        "people": list(set(ent.text for ent in doc.ents if ent.label_ == "PERSON")),
-        "locations": list(set(ent.text for ent in doc.ents if ent.label_ == "GPE")),
-        "years": [int(y) for y in re.findall(r'\b(1[0-9]{3}|20[0-9]{2})\b', query)],
-        "temporal_keywords": {
+        "years": years,
+        "temporal": {
             "before": "before" in query.lower(),
             "after": "after" in query.lower(),
             "during": "during" in query.lower()
         }
     }
 
-def retrieve(query, vectorstore):
-    """Intelligent retrieval with fallback"""
-    parsed = parse_query(query)
-    filters = build_filters(parsed)
-    
-    # Try filtered search first if applicable
-    if filters:
-        try:
-            results = vectorstore.similarity_search(query, k=TOP_K, filter=filters)
-            if results: return results
-        except:
-            pass
-    
-    # Fallback to pure similarity search
-    return vectorstore.similarity_search(query, k=TOP_K)
-
 def build_filters(parsed):
-    """Construct Chroma filter dictionary"""
     filters = {}
-    
-    # Temporal filters
     if parsed["years"]:
         year = parsed["years"][0]
-        if parsed["temporal_keywords"]["before"]:
+        if parsed["temporal"]["before"]:
             filters["year"] = {"$lt": year}
-        elif parsed["temporal_keywords"]["after"]:
+        elif parsed["temporal"]["after"]:
             filters["year"] = {"$gt": year}
         else:
             filters["year"] = year
-    
-    # Entity filters
-    if parsed["people"]:
-        filters["people"] = {"$contains": parsed["people"][0]}
-    if parsed["locations"]:
-        filters["locations"] = {"$contains": parsed["locations"][0]}
-    
     return filters
+
+def retrieve(query, vectorstore):
+    parsed = parse_query(query)
+    filters = build_filters(parsed)
+    
+    if filters:
+        try:
+            return vectorstore.similarity_search(query, k=TOP_K, filter=filters)
+        except:
+            return vectorstore.similarity_search(query, k=TOP_K)
+    
+    return vectorstore.similarity_search(query, k=TOP_K)
 
 # --- Main Execution ---
 if __name__ == "__main__":
-    # Configuration
     DATA_DIR = "/home/akash/HistoriChat/data"
-    home_directory = os.path.expanduser("~")
-    PERSIST_DIR = os.path.join(home_directory, "Historichat")
-
-    # Initialize vectorstore
+    PERSIST_DIR = os.path.expanduser("~/Historichat")
+    
     if not os.path.exists(PERSIST_DIR):
         docs = process_documents(DATA_DIR)
         vectorstore = Chroma.from_documents(
@@ -186,34 +132,19 @@ if __name__ == "__main__":
             persist_directory=PERSIST_DIR,
             embedding_function=OllamaEmbeddings(model="nomic-embed-text")
         )
-
-    # Test queries
+    
     test_queries = [
-        ("Year-based query 1", "What did William the Conqueror do in 1066"),
-        ("Year-based query 2", "What happened during the Battle of Hastings in 1066"),
-        ("Entity-based query 1", "What were Boudica's major military strategies?"),
-        ("Entity-based query 2", "Tell me about Alfred childhood")
+        ("Date-based", "Events of 1066"),
+        ("Date-range", "What happened before 1100 AD"),
+        ("Entity-only", "Tell me about Alfred's childhood"),
+        ("Mixed", "Norman conquest after 1000 AD")
     ]
-
-    # Run all test queries
+    
     for header, query in test_queries:
-        print(f"\n{'='*40}")
-        print(f"QUERY TYPE: {header}")
-        print(f"QUERY TEXT: {query}")
-        print(f"{'='*40}")
-        
+        print(f"\n=== {header} Query: {query} ===")
         results = retrieve(query, vectorstore)
-        
-        if not results:
-            print("No relevant documents found")
-            continue
-            
         for i, doc in enumerate(results):
             print(f"\nResult {i+1}:")
             print(f"Source: {doc.metadata['source']}")
             print(f"Year: {doc.metadata.get('year', 'N/A')}")
-            print(f"People: {doc.metadata.get('people', 'N/A')}")
-            print(f"Locations: {doc.metadata.get('locations', 'N/A')}")
-            print(f"Text: {doc.page_content[:300]}...")
-        
-        print("\n" + "-"*40 + "\n")
+            print(f"Text: {doc.page_content[:250]}...")
