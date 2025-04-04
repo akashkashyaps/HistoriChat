@@ -6,7 +6,7 @@ from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 
 # Initialize Spacy NLP
-nlp = spacy.load("en_core_web_trf")
+nlp = spacy.load("en_core_web_sm")
 
 # --- Configuration ---
 MAX_CHUNK_GAP = 1000  # Max characters between dates to consider same context
