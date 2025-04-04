@@ -2,17 +2,16 @@ import os
 import re
 import spacy
 from langchain.schema import Document
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 
 # Initialize Spacy NLP
-nlp = spacy.load("en_core_web_sm")
+nlp = spacy.load("en_core_web_trf")
 
 # --- Configuration ---
 MAX_CHUNK_GAP = 1000  # Max characters between dates to consider same context
-DEFAULT_YEAR = 0000   # For undated sections
-TOP_K = 5             # Number of results to return
+DEFAULT_YEAR = 0       # For undated sections (changed from 0000 for numeric consistency)
+TOP_K = 10              # Number of results to return
 
 # --- Text Loading ---
 def load_texts(folder_path):
@@ -103,8 +102,16 @@ def process_documents(folder_path):
 
 def clean_metadata(meta):
     """Ensure metadata values are Chroma compatible"""
-    return {k: (v if isinstance(v, (str, int, float, bool)) else str(v)) 
-            for k, v in meta.items()}
+    cleaned = {}
+    for key, value in meta.items():
+        if isinstance(value, list):
+            # Convert lists to comma-separated strings
+            cleaned[key] = ", ".join(value)
+        elif isinstance(value, (str, int, float, bool)):
+            cleaned[key] = value
+        else:
+            cleaned[key] = str(value)
+    return cleaned
 
 # --- Query Handling ---
 def parse_query(query):
@@ -172,21 +179,24 @@ if __name__ == "__main__":
         vectorstore = Chroma.from_documents(
             documents=docs,
             embedding=OllamaEmbeddings(model="nomic-embed-text"),
-            persist_directory=PERSIST_DIR
+            persist_directory=PERSIST_DIR,
+            collection_name="HC-2"
         )
     else:
         vectorstore = Chroma(
             persist_directory=PERSIST_DIR,
-            embedding_function=OllamaEmbeddings(model="nomic-embed-text")
+            embedding_function=OllamaEmbeddings(model="nomic-embed-text"),
+            collection_name="HC-2"
         )
     
     # Example query
-    results = retrieve("What did william the conqueror do in 1066", vectorstore)
+    results = retrieve("What did William the Conqueror do in 1066", vectorstore)
     
     # Display results
     for i, doc in enumerate(results):
         print(f"\nResult {i+1}:")
         print(f"Source: {doc.metadata['source']}")
         print(f"Year: {doc.metadata.get('year', 'N/A')}")
-        print(f"People: {', '.join(doc.metadata.get('people', []))}")
+        print(f"People: {doc.metadata.get('people', 'N/A')}")
+        print(f"Locations: {doc.metadata.get('locations', 'N/A')}")
         print(f"Text: {doc.page_content[:300]}...")
