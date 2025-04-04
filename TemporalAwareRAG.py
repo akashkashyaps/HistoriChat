@@ -5,18 +5,15 @@ from datetime import datetime
 from collections import defaultdict
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_ollama import ChatOllama
-from langchain_ollama import OllamaEmbeddings
+from langchain_ollama import ChatOllama, OllamaEmbeddings
 from langchain.schema import Document
 
-#  Load NLP Model for Entity Extraction
+# Load NLP model
 nlp = spacy.load("en_core_web_sm")
 
 folder_path = "/home/akash/HistoriChat/data"
 
-# Load and parse text
 def load_text_files(folder_path):
-    """Load all .txt files from a folder."""
     files = [f for f in os.listdir(folder_path) if f.endswith('.txt')]
     texts = {}
     for file in files:
@@ -24,69 +21,48 @@ def load_text_files(folder_path):
             texts[file] = f.read()
     return texts
 
-# Extract metadata
 def extract_years(text):
-    """Extracts years (1000-2099) from text using regex."""
-    year_matches = re.findall(r'\b(1[0-9]{3}|20[0-9]{2})\b', text)
-    return sorted({int(year) for year in year_matches})
+    return sorted({int(y) for y in re.findall(r'\b(1[0-9]{3}|20[0-9]{2})\b', text)})
 
 def extract_entities(text):
-    """Extracts historical entities (PERSON, EVENT, DATE, GPE) using Spacy."""
     doc = nlp(text)
     entities = defaultdict(list)
-    
     for ent in doc.ents:
-        if ent.label_ in {"PERSON", "EVENT", "DATE", "GPE"}: 
+        if ent.label_ in {"PERSON", "EVENT", "DATE", "GPE"}:
             entities[ent.label_].append(ent.text)
-    
-    # Deduplicate entities
     for key in entities:
         entities[key] = list(set(entities[key]))
-    
     return dict(entities)
 
-# Timeline-based Chunking
 def chunk_by_timeline(text, chunk_size=1000, max_gap=20):
-    """
-    Splits text into timeline-based chunks.
-    Chunks are formed by keeping sections with close years together.
-    
-    - chunk_size: max characters per chunk
-    - max_gap: max allowed gap between years to remain in the same chunk
-    """
     splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=200)
     raw_chunks = splitter.split_text(text)
-    
+
     enriched_chunks = []
     current_chunk = []
     current_years = []
 
     for chunk in raw_chunks:
         years = extract_years(chunk)
-        
-        if not current_chunk:  
-            # Start first chunk
+
+        if not current_chunk:
             current_chunk.append(chunk)
             current_years.extend(years)
             continue
 
-        # If the new chunk’s years are close to the current chunk, merge them
         if years and current_years and (min(years) - max(current_years) <= max_gap):
             current_chunk.append(chunk)
             current_years.extend(years)
         else:
-            # Save the previous chunk
             enriched_chunks.append({
                 "text": " ".join(current_chunk),
                 "years": sorted(set(current_years)),
                 "start_year": min(current_years) if current_years else None,
                 "end_year": max(current_years) if current_years else None
             })
-            # Start a new chunk
             current_chunk = [chunk]
             current_years = years
 
-    # Save last chunk
     if current_chunk:
         enriched_chunks.append({
             "text": " ".join(current_chunk),
@@ -94,169 +70,143 @@ def chunk_by_timeline(text, chunk_size=1000, max_gap=20):
             "start_year": min(current_years) if current_years else None,
             "end_year": max(current_years) if current_years else None
         })
-    
+
     return enriched_chunks
 
-# Create vectorstore
 def process_and_store_in_chromadb(folder_path):
-    """Loads, processes, and stores text documents in ChromaDB with metadata."""
-    
-    # Load text files
     texts = load_text_files(folder_path)
     all_documents = []
 
-    # Process each text file
     for filename, text in texts.items():
         chunks = chunk_by_timeline(text)
-        
         for i, chunk in enumerate(chunks):
+            entities = extract_entities(chunk["text"])
             metadata = {
                 "file": filename,
                 "chunk_index": i,
                 "start_year": chunk["start_year"],
                 "end_year": chunk["end_year"],
                 "years": chunk["years"],
-                "entities": extract_entities(chunk["text"])
+                "person": entities.get("PERSON", []),
+                "event": entities.get("EVENT", []),
+                "location": entities.get("GPE", []),
             }
             all_documents.append({"text": chunk["text"], "metadata": metadata})
 
-    # Setup ChromaDB storage with LangChain
-    home_directory = os.path.expanduser("~")
-    persist_directory = os.path.join(home_directory, "HistoriChat")
-    
+    persist_directory = os.path.expanduser("~/HistoriChat")
     vectorstore = Chroma(
-        persist_directory=persist_directory, 
-        embedding_function=OllamaEmbeddings(model="nomic-embed-text"), 
+        persist_directory=persist_directory,
+        embedding_function=OllamaEmbeddings(model="nomic-embed-text"),
         collection_name="HC-1"
     )
 
-    # Insert documents into ChromaDB
-    for idx, doc in enumerate(all_documents):
-        vectorstore.add_texts(
-            texts=[doc["text"]],
-            metadatas=[doc["metadata"]]
-        )
+    for doc in all_documents:
+        vectorstore.add_texts([doc["text"]], metadatas=[doc["metadata"]])
 
-    print(f"Stored {len(all_documents)} documents in ChromaDB.")
-
+    print(f"[INFO] Stored {len(all_documents)} chunks in ChromaDB.")
     return vectorstore
 
-# -------------------------------------------------------------------------------------------------------------------
-
-# Extract Query Metadata (Entities, Dates, Timeline Keywords)
+# --- Query Parsing ---
 
 def parse_query(query):
-    """
-    Extracts key information from the query:
-    - Entities (People, Events, Locations)
-    - Years
-    - Temporal keywords (before, after, during, first, second, etc.)
-    """
     doc = nlp(query)
     entities = {"PERSON": [], "EVENT": [], "DATE": [], "GPE": []}
-    
-    # Extract Named Entities
     for ent in doc.ents:
         if ent.label_ in entities:
             entities[ent.label_].append(ent.text)
-    
-    # Extract Years (e.g., "1066")
-    years = re.findall(r'\b(1[0-9]{3}|20[0-9]{2})\b', query)
-    years = sorted(set(map(int, years)))
 
-    # Extract Temporal Keywords
+    years = sorted(set(map(int, re.findall(r'\b(1[0-9]{3}|20[0-9]{2})\b', query))))
     temporal_keywords = []
-    if "before" in query.lower():
-        temporal_keywords.append("before")
-    if "after" in query.lower():
-        temporal_keywords.append("after")
-    if "during" in query.lower():
-        temporal_keywords.append("during")
-    if any(word in query.lower() for word in ["first", "second", "third"]):
+
+    if "before" in query.lower(): temporal_keywords.append("before")
+    if "after" in query.lower(): temporal_keywords.append("after")
+    if "during" in query.lower(): temporal_keywords.append("during")
+    if any(w in query.lower() for w in ["first", "second", "third"]):
         temporal_keywords.append("ordered")
-    
+
     return {
         "entities": entities,
         "years": years,
         "temporal_keywords": temporal_keywords
     }
 
-# Custom retreiver with filtering
+# --- Retrieval with Fallback ---
+
 def retrieve_historical_facts(query):
-    """
-    Retrieves relevant historical facts based on the query.
-    - Filters results based on entities, years, and timeline keywords.
-    - Uses ChromaDB with LangChain's retriever.
-    - Sorts results chronologically if needed.
-    """
-    # Parse query metadata
-    parsed_query = parse_query(query)
-    conditions = []
+    parsed = parse_query(query)
+    print("[DEBUG] Parsed query:", parsed)
 
-    # Apply entity filters using $in operator
-    if parsed_query["entities"]["PERSON"]:
-        conditions.append({
-            "entities.PERSON": {"$in": [parsed_query["entities"]["PERSON"][0]]}
-        })
-    
-    if parsed_query["entities"]["EVENT"]:
-        conditions.append({
-            "entities.EVENT": {"$in": [parsed_query["entities"]["EVENT"][0]]}
-        })
+    filters = []
 
-    # Handle temporal filters
-    if parsed_query["years"]:
-        year = parsed_query["years"][0]
-        if "before" in parsed_query["temporal_keywords"]:
-            conditions.append({"start_year": {"$lt": year}})
-        elif "after" in parsed_query["temporal_keywords"]:
-            conditions.append({"start_year": {"$gt": year}})
-        elif "during" in parsed_query["temporal_keywords"]:
-            conditions.append({
+    if parsed["entities"]["PERSON"]:
+        filters.append({"person": {"$in": parsed["entities"]["PERSON"]}})
+    if parsed["entities"]["EVENT"]:
+        filters.append({"event": {"$in": parsed["entities"]["EVENT"]}})
+
+    if parsed["years"]:
+        year = parsed["years"][0]
+        if "before" in parsed["temporal_keywords"]:
+            filters.append({"start_year": {"$lt": year}})
+        elif "after" in parsed["temporal_keywords"]:
+            filters.append({"start_year": {"$gt": year}})
+        elif "during" in parsed["temporal_keywords"]:
+            filters.append({
                 "$and": [
                     {"start_year": {"$lte": year}},
                     {"end_year": {"$gte": year}}
                 ]
             })
 
-    # Combine conditions
-    search_filter = {"$and": conditions} if conditions else {}
+    search_filter = {"$and": filters} if filters else None
+    print("[DEBUG] Using filter:", search_filter)
 
-    # Load ChromaDB
-    home_directory = os.path.expanduser("~")
-    persist_directory = os.path.join(home_directory, "HistoriChat")
-    
+    persist_directory = os.path.expanduser("~/HistoriChat")
     vectorstore = Chroma(
-        persist_directory=persist_directory, 
-        embedding_function=OllamaEmbeddings(model="nomic-embed-text"), 
+        persist_directory=persist_directory,
+        embedding_function=OllamaEmbeddings(model="nomic-embed-text"),
         collection_name="HC-1"
     )
-    
-    # Use LangChain Retriever
-    retriever = vectorstore.as_retriever(
-        search_type="similarity", 
-        search_kwargs={
-            "k": 10,
-            "filter": search_filter if conditions else None
-        }
-    )
-    
-    results = retriever.invoke(query)
 
-    # Sort results if query asks for chronological order
-    if "ordered" in parsed_query["temporal_keywords"]:
-        results = sorted(
-            results, 
-            key=lambda doc: doc.metadata.get("start_year", 9999)
-        )
+    retriever = vectorstore.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": 10, "filter": search_filter}
+    )
+
+    try:
+        results = retriever.invoke(query)
+        if not results:
+            print("[WARN] No results with filter. Retrying without filters...")
+            retriever = vectorstore.as_retriever(
+                search_type="similarity",
+                search_kwargs={"k": 5}
+            )
+            results = retriever.invoke(query)
+    except Exception as e:
+        print(f"[ERROR] Retrieval failed: {e}")
+        retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+        results = retriever.invoke(query)
+
+    if "ordered" in parsed["temporal_keywords"]:
+        results = sorted(results, key=lambda doc: doc.metadata.get("start_year", 9999))
 
     return results
 
-# Example usage
-query = "What did William do before 1066?"
-retrieved_docs = retrieve_historical_facts(query)
+# --- Main Execution ---
 
-print(f"Results for query: '{query}'\n")
-for doc in retrieved_docs:
-    print(f"Year Range: {doc.metadata.get('start_year')} - {doc.metadata.get('end_year')}")
-    print(f"Text: {doc.page_content[:300]}...\n")
+if __name__ == "__main__":
+    query = "What did William do before 1066?"
+    print("[INFO] Query:", query)
+
+    # If data isn’t already indexed, run this first
+    # vectorstore = process_and_store_in_chromadb(folder_path)
+
+    retrieved_docs = retrieve_historical_facts(query)
+
+    print(f"\n[RESULT] Results for query: '{query}'\n")
+    if not retrieved_docs:
+        print("No documents found.")
+    else:
+        for doc in retrieved_docs:
+            print(f"Year Range: {doc.metadata.get('start_year')} - {doc.metadata.get('end_year')}")
+            print(f"Persons: {doc.metadata.get('person')}")
+            print(f"Text: {doc.page_content[:300]}...\n")
