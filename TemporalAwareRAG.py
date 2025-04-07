@@ -46,8 +46,13 @@ def clean_metadata(meta):
 # --- Process Documents ---
 def process_documents(folder_path):
     texts = load_texts(folder_path)
-    all_docs = []
 
+    print("\n=== Loaded Text Files ===")
+    for name, content in texts.items():
+        print(f"{name}: {len(content)} chars, {len(content.splitlines())} lines")
+    print(f"Total files loaded: {len(texts)}\n")
+
+    all_docs = []
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
 
     for filename, content in texts.items():
@@ -65,6 +70,7 @@ def process_documents(folder_path):
         print(f"{src}: {count} chunks")
 
     return all_docs
+
 
 # --- Query Handling ---
 def parse_query(query):
