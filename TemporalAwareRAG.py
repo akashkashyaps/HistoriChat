@@ -129,20 +129,32 @@ def parse_query(query):
     }
 
 def retrieve(query, vectorstore):
-    """Intelligent retrieval with fallback"""
+    """Return top 2 from semantic search and top 2 from entity-based filtered search"""
     parsed = parse_query(query)
     filters = build_filters(parsed)
-    
-    # Try filtered search first if applicable
+
+    top_semantic = []
+    top_filtered = []
+
+    # --- Entity Filtered Search ---
     if filters:
         try:
-            results = vectorstore.similarity_search(query, k=TOP_K, filter=filters)
-            if results: return results
-        except:
-            pass
-    
-    # Fallback to pure similarity search
-    return vectorstore.similarity_search(query, k=TOP_K)
+            filtered_results = vectorstore.similarity_search(query, k=2, filter=filters)
+            top_filtered = filtered_results[:2]
+        except Exception as e:
+            print(f"Filtered search error: {e}")
+
+    # --- Pure Semantic Search ---
+    try:
+        semantic_results = vectorstore.similarity_search(query, k=2)
+        top_semantic = semantic_results[:2]
+    except Exception as e:
+        print(f"Semantic search error: {e}")
+
+    # Combine, but ensure no duplicates
+    combined = {doc.page_content: doc for doc in (top_filtered + top_semantic)}  # remove duplicates by content
+    return list(combined.values())
+
 
 def build_filters(parsed):
     """Construct Chroma filter dictionary"""
@@ -211,7 +223,7 @@ if __name__ == "__main__":
         print("\n=== Results ===")
         for i, doc in enumerate(results):
             print(f"\nResult {i+1}:")
-            print(f"Source: {doc.metadata['source']}")
+            print(f"Source: {doc.metadata.get('source', 'Unknown')}")
             print(f"Year: {doc.metadata.get('year', 'N/A')}")
             print(f"People: {doc.metadata.get('people', 'N/A')}")
             print(f"Text: {doc.page_content[:300]}...")
