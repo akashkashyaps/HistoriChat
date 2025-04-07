@@ -1,6 +1,7 @@
 import os
 import re
 import spacy
+from collections import Counter
 from langchain.schema import Document
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
@@ -28,11 +29,13 @@ def chunk_by_dates(text):
     current_chunk = []
     current_year = DEFAULT_YEAR
     pos = 0
+
     year_matches = list(re.finditer(r'\b(1[0-9]{3}|20[0-9]{2})\b', text))
 
     for i, match in enumerate(year_matches):
         year = int(match.group())
         start = match.start()
+
         if current_year != DEFAULT_YEAR and (year != current_year or start - pos > MAX_CHUNK_GAP):
             chunks.append(create_chunk(current_chunk, current_year, pos, start))
             current_chunk = []
@@ -72,10 +75,8 @@ def process_documents(folder_path):
 
     for filename, content in texts.items():
         chunks = chunk_by_dates(content)
-        print(f"File '{filename}' -> {len(chunks)} chunks")
         for chunk in chunks:
             entities = extract_entities(chunk["text"])
-            print(f"Entities in '{filename}': People={entities['people']} | Locations={entities['locations']}")
             metadata = {
                 "source": filename,
                 "year": chunk["year"],
@@ -86,11 +87,12 @@ def process_documents(folder_path):
                 page_content=chunk["text"],
                 metadata=clean_metadata(metadata)
             ))
-        print("\n=== Document Count by Source ===")
-        from collections import Counter
-        counter = Counter(doc.metadata['source'] for doc in all_docs)
-        for src, count in counter.items():
-            print(f"{src}: {count} chunks")
+
+    # Debug: Show document counts per source
+    print("\n=== Document Count by Source ===")
+    counter = Counter(doc.metadata['source'] for doc in all_docs)
+    for src, count in counter.items():
+        print(f"{src}: {count} chunks")
 
     return all_docs
 
@@ -98,7 +100,7 @@ def clean_metadata(meta):
     cleaned = {}
     for key, value in meta.items():
         if isinstance(value, list):
-            cleaned[key] = ", ".join([v.lower() for v in value])
+            cleaned[key] = ", ".join(value)
         elif isinstance(value, (str, int, float, bool)):
             cleaned[key] = value
         else:
@@ -119,39 +121,9 @@ def parse_query(query):
         }
     }
 
-def retrieve(query, vectorstore):
-    parsed = parse_query(query)
-    filters = build_filters(parsed)
-
-    print(f"Query parsed as: {parsed}")
-    print(f"Filters applied: {filters}")
-
-    results = []
-
-    try:
-        if filters:
-            filtered_results = vectorstore.similarity_search(query, k=2, filter=filters)
-            results.extend([(doc, "entity") for doc in filtered_results[:2]])
-    except Exception as e:
-        print(f"Filtered search error: {e}")
-
-    try:
-        semantic_results = vectorstore.similarity_search(query, k=2)
-        results.extend([(doc, "semantic") for doc in semantic_results[:2]])
-    except Exception as e:
-        print(f"Semantic search error: {e}")
-
-    seen = set()
-    unique_results = []
-    for doc, label in results:
-        if doc.page_content not in seen:
-            seen.add(doc.page_content)
-            unique_results.append((doc, label))
-
-    return unique_results
-
 def build_filters(parsed):
     filters = {}
+
     if parsed["years"]:
         year = parsed["years"][0]
         if parsed["temporal_keywords"]["before"]:
@@ -162,13 +134,44 @@ def build_filters(parsed):
             filters["year"] = year
 
     if parsed["people"]:
-        filters["people"] = {"$contains": parsed["people"][0].lower()}
+        filters["people"] = {"$contains": parsed["people"][0]}
     if parsed["locations"]:
-        filters["locations"] = {"$contains": parsed["locations"][0].lower()}
+        filters["locations"] = {"$contains": parsed["locations"][0]}
 
     return filters
 
-# --- Main Execution ---
+def retrieve(query, vectorstore):
+    parsed = parse_query(query)
+    filters = build_filters(parsed)
+
+    results = []
+
+    # Entity-based search
+    try:
+        if filters:
+            entity_results = vectorstore.similarity_search(query, k=2, filter=filters)
+            results.extend([(doc, "entity") for doc in entity_results])
+    except Exception as e:
+        print(f"Entity search error: {e}")
+
+    # Semantic search
+    try:
+        semantic_results = vectorstore.similarity_search(query, k=2)
+        results.extend([(doc, "semantic") for doc in semantic_results])
+    except Exception as e:
+        print(f"Semantic search error: {e}")
+
+    # Remove duplicates by content
+    seen = set()
+    unique_results = []
+    for doc, label in results:
+        if doc.page_content not in seen:
+            seen.add(doc.page_content)
+            unique_results.append((doc, label))
+
+    return unique_results
+
+# --- Main ---
 if __name__ == "__main__":
     DATA_DIR = "/home/akash/HistoriChat/data"
     home_directory = os.path.expanduser("~")
@@ -178,6 +181,7 @@ if __name__ == "__main__":
     print(f"Data directory exists: {os.path.exists(DATA_DIR)}")
     print(f"Persist directory exists: {os.path.exists(PERSIST_DIR)}")
 
+    # Load or build vectorstore
     if not os.path.exists(PERSIST_DIR):
         print("\n=== Processing Documents ===")
         docs = process_documents(DATA_DIR)
@@ -198,8 +202,9 @@ if __name__ == "__main__":
         )
         print(f"Existing collection contains {vectorstore._collection.count()} documents")
 
-    print("\n=== Testing Query ===")
+    # Test Query
     test_query = "tell me about alfred the great"
+    print("\n=== Testing Query ===")
     print("Running query:", test_query)
     results = retrieve(test_query, vectorstore)
     print(f"Found {len(results)} results")
