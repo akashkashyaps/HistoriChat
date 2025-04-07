@@ -33,7 +33,7 @@ generator = TestsetGenerator.from_langchain(ollama_llm, ollama_llm, ollama_embed
 
 # Generate test dataset
 testset_size = 1000
-dataset = generator.generate_with_langchain_docs(split_docs, testset_size=testset_size)
+dataset = generator.generate_with_langchain_docs(split_docs, test_size=testset_size)
 
 # Save results
 dataset.to_pandas().to_csv("testset_v1.csv", index=False)
