@@ -15,7 +15,7 @@ import os
 from langchain.chat_models import ChatOpenAI
 
 os.environ["OPENAI_API_KEY"] = "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"
-os.environ["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
+os.environ["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1/chat/completions"
 
 # Initialize Ollama components
 base_llm = ChatOpenAI(
