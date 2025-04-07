@@ -129,31 +129,37 @@ def parse_query(query):
     }
 
 def retrieve(query, vectorstore):
-    """Return top 2 from semantic search and top 2 from entity-based filtered search"""
+    """Return top 2 from semantic search and top 2 from entity-based filtered search, with labels"""
     parsed = parse_query(query)
     filters = build_filters(parsed)
 
-    top_semantic = []
-    top_filtered = []
+    results = []
 
     # --- Entity Filtered Search ---
-    if filters:
-        try:
+    try:
+        if filters:
             filtered_results = vectorstore.similarity_search(query, k=2, filter=filters)
-            top_filtered = filtered_results[:2]
-        except Exception as e:
-            print(f"Filtered search error: {e}")
+            results.extend([(doc, "entity") for doc in filtered_results[:2]])
+    except Exception as e:
+        print(f"Filtered search error: {e}")
 
-    # --- Pure Semantic Search ---
+    # --- Semantic Search ---
     try:
         semantic_results = vectorstore.similarity_search(query, k=2)
-        top_semantic = semantic_results[:2]
+        results.extend([(doc, "semantic") for doc in semantic_results[:2]])
     except Exception as e:
         print(f"Semantic search error: {e}")
 
-    # Combine, but ensure no duplicates
-    combined = {doc.page_content: doc for doc in (top_filtered + top_semantic)}  # remove duplicates by content
-    return list(combined.values())
+    # Deduplicate based on document content
+    seen = set()
+    unique_results = []
+    for doc, label in results:
+        if doc.page_content not in seen:
+            seen.add(doc.page_content)
+            unique_results.append((doc, label))
+
+    return unique_results
+
 
 
 def build_filters(parsed):
@@ -218,11 +224,10 @@ if __name__ == "__main__":
     results = retrieve(test_query, vectorstore)
     print(f"Found {len(results)} results")
 
-    # Display results
     if results:
         print("\n=== Results ===")
-        for i, doc in enumerate(results):
-            print(f"\nResult {i+1}:")
+        for i, (doc, label) in enumerate(results):
+            print(f"\nResult {i+1} ({label.upper()}):")
             print(f"Source: {doc.metadata.get('source', 'Unknown')}")
             print(f"Year: {doc.metadata.get('year', 'N/A')}")
             print(f"People: {doc.metadata.get('people', 'N/A')}")
