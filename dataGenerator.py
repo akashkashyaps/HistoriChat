@@ -30,8 +30,8 @@ split_docs = text_splitter.split_documents(docs)
 
 # Initialize test generator with Ollama components
 generator = TestsetGenerator(
-    llm=ollama_llm,
-    embedding_model=ollama_embeddings
+    ollama_llm,
+    ollama_embeddings
 )
 
 # Generate test dataset
