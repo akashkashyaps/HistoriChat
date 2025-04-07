@@ -1,17 +1,24 @@
 import os
 import re
+import shutil
 import spacy
-from collections import Counter
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_ollama import OllamaEmbeddings
 
-# Initialize Spacy
+# Initialize Spacy NLP
 nlp = spacy.load("en_core_web_sm")
+
+# --- Configuration ---
+DEFAULT_YEAR = 0
+TOP_K = 10
+CHUNK_SIZE = 500
+CHUNK_OVERLAP = 100
 
 # --- Text Loading ---
 def load_texts(folder_path):
+    """Load all .txt files from a directory"""
     texts = {}
     for file in os.listdir(folder_path):
         if file.endswith('.txt'):
@@ -19,18 +26,55 @@ def load_texts(folder_path):
                 texts[file] = f.read()
     return texts
 
-# --- Metadata Extraction ---
-def extract_metadata(text):
+# --- Year Extraction ---
+def extract_first_year(text):
+    match = re.search(r'\b(1[0-9]{3}|20[0-9]{2})\b', text)
+    return int(match.group()) if match else DEFAULT_YEAR
+
+# --- Entity Extraction ---
+def extract_entities(text):
     doc = nlp(text)
-    people = list(set(ent.text for ent in doc.ents if ent.label_ == "PERSON"))
-    locations = list(set(ent.text for ent in doc.ents if ent.label_ == "GPE"))
-    years = [int(y) for y in re.findall(r'\b(1[0-9]{3}|20[0-9]{2})\b', text)]
-    first_year = years[0] if years else 0
     return {
-        "people": people,
-        "locations": locations,
-        "year": first_year
+        "people": list(set(ent.text for ent in doc.ents if ent.label_ == "PERSON")),
+        "locations": list(set(ent.text for ent in doc.ents if ent.label_ == "GPE"))
     }
+
+# --- Document Processing ---
+def process_documents(folder_path):
+    """Main processing pipeline"""
+    texts = load_texts(folder_path)
+
+    print("\n=== Loaded Text Files ===")
+    for name, content in texts.items():
+        print(f"{name}: {len(content)} characters")
+    print(f"Total files loaded: {len(texts)}")
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP
+    )
+
+    all_docs = []
+
+    for filename, content in texts.items():
+        chunks = splitter.split_text(content)
+        for chunk in chunks:
+            entities = extract_entities(chunk)
+            year = extract_first_year(chunk)
+
+            metadata = {
+                "source": filename,
+                "year": year,
+                "people": entities["people"],
+                "locations": entities["locations"]
+            }
+
+            all_docs.append(Document(
+                page_content=chunk,
+                metadata=clean_metadata(metadata)
+            ))
+
+    return all_docs
 
 def clean_metadata(meta):
     cleaned = {}
@@ -42,35 +86,6 @@ def clean_metadata(meta):
         else:
             cleaned[key] = str(value)
     return cleaned
-
-# --- Process Documents ---
-def process_documents(folder_path):
-    texts = load_texts(folder_path)
-
-    print("\n=== Loaded Text Files ===")
-    for name, content in texts.items():
-        print(f"{name}: {len(content)} chars, {len(content.splitlines())} lines")
-    print(f"Total files loaded: {len(texts)}\n")
-
-    all_docs = []
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-
-    for filename, content in texts.items():
-        metadata = extract_metadata(content)
-        metadata["source"] = filename
-        cleaned = clean_metadata(metadata)
-        splits = splitter.split_text(content)
-
-        for split in splits:
-            all_docs.append(Document(page_content=split, metadata=cleaned))
-
-    print("\n=== Document Count by Source ===")
-    counter = Counter(doc.metadata['source'] for doc in all_docs)
-    for src, count in counter.items():
-        print(f"{src}: {count} chunks")
-
-    return all_docs
-
 
 # --- Query Handling ---
 def parse_query(query):
@@ -86,33 +101,16 @@ def parse_query(query):
         }
     }
 
-def build_filters(parsed):
-    filters = {}
-    if parsed["years"]:
-        year = parsed["years"][0]
-        if parsed["temporal_keywords"]["before"]:
-            filters["year"] = {"$lt": year}
-        elif parsed["temporal_keywords"]["after"]:
-            filters["year"] = {"$gt": year}
-        else:
-            filters["year"] = year
-    if parsed["people"]:
-        filters["people"] = {"$contains": parsed["people"][0]}
-    if parsed["locations"]:
-        filters["locations"] = {"$contains": parsed["locations"][0]}
-    return filters
-
 def retrieve(query, vectorstore):
     parsed = parse_query(query)
     filters = build_filters(parsed)
-
     results = []
 
-    # Entity-based filtered search
+    # Entity-based search
     try:
         if filters:
-            entity_results = vectorstore.similarity_search(query, k=2, filter=filters)
-            results.extend([(doc, "entity") for doc in entity_results])
+            filtered_results = vectorstore.similarity_search(query, k=2, filter=filters)
+            results.extend([(doc, "entity") for doc in filtered_results])
     except Exception as e:
         print(f"Entity search error: {e}")
 
@@ -130,8 +128,23 @@ def retrieve(query, vectorstore):
         if doc.page_content not in seen:
             seen.add(doc.page_content)
             unique_results.append((doc, label))
-
     return unique_results
+
+def build_filters(parsed):
+    filters = {}
+    if parsed["years"]:
+        year = parsed["years"][0]
+        if parsed["temporal_keywords"]["before"]:
+            filters["year"] = {"$lt": year}
+        elif parsed["temporal_keywords"]["after"]:
+            filters["year"] = {"$gt": year}
+        else:
+            filters["year"] = year
+    if parsed["people"]:
+        filters["people"] = {"$contains": parsed["people"][0]}
+    if parsed["locations"]:
+        filters["locations"] = {"$contains": parsed["locations"][0]}
+    return filters
 
 # --- Main Execution ---
 if __name__ == "__main__":
@@ -141,32 +154,30 @@ if __name__ == "__main__":
 
     print("\n=== Path Verification ===")
     print(f"Data directory exists: {os.path.exists(DATA_DIR)}")
-    print(f"Persist directory exists: {os.path.exists(PERSIST_DIR)}")
 
-    if not os.path.exists(PERSIST_DIR):
-        print("\n=== Processing and Building Vectorstore ===")
-        docs = process_documents(DATA_DIR)
-        print(f"Total chunks: {len(docs)}")
+    # Always delete existing vectorstore
+    if os.path.exists(PERSIST_DIR):
+        print("Deleting old vectorstore...")
+        shutil.rmtree(PERSIST_DIR)
 
-        vectorstore = Chroma.from_documents(
-            documents=docs,
-            embedding=OllamaEmbeddings(model="nomic-embed-text"),
-            persist_directory=PERSIST_DIR,
-            collection_name="HC-2"
-        )
-        print("New vectorstore created.")
-    else:
-        print("\n=== Loading Existing Vectorstore ===")
-        vectorstore = Chroma(
-            persist_directory=PERSIST_DIR,
-            embedding_function=OllamaEmbeddings(model="nomic-embed-text")
-        )
-        print(f"Existing collection contains {vectorstore._collection.count()} documents")
+    print("\n=== Processing Documents ===")
+    docs = process_documents(DATA_DIR)
+    print(f"Total chunks created: {len(docs)}")
 
-    test_query = "Tell me about Alfred the Great"
+    vectorstore = Chroma.from_documents(
+        documents=docs,
+        embedding=OllamaEmbeddings(model="nomic-embed-text"),
+        persist_directory=PERSIST_DIR,
+        collection_name="HC-2"
+    )
+    print("Vectorstore created and saved.")
+
+    # Test Query
     print("\n=== Testing Query ===")
+    test_query = "tell me about alfred the great"
+    print("Query:", test_query)
     results = retrieve(test_query, vectorstore)
-    print(f"Found {len(results)} results")
+    print(f"Found {len(results)} unique results")
 
     if results:
         print("\n=== Results ===")
