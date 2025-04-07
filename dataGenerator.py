@@ -15,8 +15,6 @@ warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
 ollama_llm = ChatOllama(model="llama3.1", temperature=0.2)
 ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text") 
 
-# Wrap components for RAGAS compatibility
-generator_llm = LangchainLLMWrapper(ollama_llm)
 
 # Load documents
 loader = DirectoryLoader("/home/akash/HistoriChat/data", glob="*.txt")
@@ -32,7 +30,7 @@ split_docs = text_splitter.split_documents(docs)
 
 # Initialize test generator with Ollama components
 generator = TestsetGenerator(
-    llm=generator_llm,
+    llm=ollama_llm,
     embedding_model=ollama_embeddings
 )
 
