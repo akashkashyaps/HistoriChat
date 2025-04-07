@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
 
 # Initialize Ollama components
 ollama_llm = ChatOllama(model="qwen2.5:7b-instruct-q4_0", temperature=0.2)
-ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text", pydantic_v2=True) 
+ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text") 
 
 
 # Load documents
