@@ -172,20 +172,27 @@ if __name__ == "__main__":
     )
     print("Vectorstore created and saved.")
 
-    # Test Query
-    print("\n=== Testing Query ===")
-    test_query = "tell me about alfred the great"
-    print("Query:", test_query)
-    results = retrieve(test_query, vectorstore)
-    print(f"Found {len(results)} unique results")
+    # --- Testing Multiple Queries ---
+    test_queries = [
+        "tell me about alfred the great",   # standard query
+        "what happened before 1066",         # temporal query: before a specific year
+        "what happened after 1066",          # temporal query: after a specific year
+        "battle of hastings"                 # temporal query: during a specific year (if applicable)
+    ]
 
-    if results:
-        print("\n=== Results ===")
-        for i, (doc, label) in enumerate(results):
-            print(f"\nResult {i+1} ({label.upper()}):")
-            print(f"Source: {doc.metadata.get('source', 'Unknown')}")
-            print(f"Year: {doc.metadata.get('year', 'N/A')}")
-            print(f"People: {doc.metadata.get('people', 'N/A')}")
-            print(f"Text: {doc.page_content[:300]}...")
-    else:
-        print("No results found.")
+    for query in test_queries:
+        print("\n=== Testing Query ===")
+        print("Query:", query)
+        results = retrieve(query, vectorstore)
+        print(f"Found {len(results)} unique results")
+    
+        if results:
+            for i, (doc, label) in enumerate(results):
+                print(f"\nResult {i+1} ({label.upper()}):")
+                print(f"Source: {doc.metadata.get('source', 'Unknown')}")
+                print(f"Year: {doc.metadata.get('year', 'N/A')}")
+                print(f"People: {doc.metadata.get('people', 'N/A')}")
+                print(f"Text: {doc.page_content[:300]}...")
+        else:
+            print("No results found for query:", query)
+
