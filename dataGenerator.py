@@ -32,7 +32,7 @@ text_splitter = RecursiveCharacterTextSplitter(
 split_docs = text_splitter.split_documents(docs)
 
 # Initialize test generator with Ollama components
-generator = TestsetGenerator(llm = llm, embeddings= embeddings)
+generator = TestsetGenerator(llm = llm, embedding_model = embeddings)
 
 # Generate test dataset
 testset_size = 1000
