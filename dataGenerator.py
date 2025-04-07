@@ -36,7 +36,7 @@ generator = TestsetGenerator.from_langchain(llm, llm, embeddings)
 
 # Generate test dataset
 testset_size = 1000
-dataset = generator.generate_with_langchain_docs(split_docs, test_size=testset_size, raise_exceptions=False)
+dataset = generator.generate_with_langchain_docs(split_docs, testset_size=testset_size, raise_exceptions=False)
 
 # Save results
 dataset.to_pandas().to_csv("testset_v1.csv", index=False)
