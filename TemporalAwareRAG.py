@@ -86,6 +86,11 @@ def process_documents(folder_path):
                 page_content=chunk["text"],
                 metadata=clean_metadata(metadata)
             ))
+        print("\n=== Document Count by Source ===")
+        from collections import Counter
+        counter = Counter(doc.metadata['source'] for doc in all_docs)
+        for src, count in counter.items():
+            print(f"{src}: {count} chunks")
 
     return all_docs
 
