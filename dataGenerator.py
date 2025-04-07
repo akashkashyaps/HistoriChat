@@ -6,15 +6,26 @@ from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.testset import TestsetGenerator
 
-
 import warnings
 from langchain_core._api.deprecation import LangChainDeprecationWarning
 
 warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
 
+import os
+from langchain.chat_models import ChatOpenAI
+
+os.environ["OPENAI_API_KEY"] = "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"
+os.environ["OPENAI_BASE_URL"] = "https://openrouter.ai/api/v1"
+
 # Initialize Ollama components
-ollama_llm = ChatOllama(model="qwen2.5:7b-instruct-q4_0", temperature=0.2)
-llm = LangchainLLMWrapper(ollama_llm)
+base_llm = ChatOpenAI(
+    model="meta-llama/llama-3.3-70b-instruct:free",
+    temperature=0.2,
+    openai_api_key=os.environ["OPENAI_API_KEY"],
+    openai_api_base=os.environ["OPENAI_BASE_URL"]
+)
+
+llm = LangchainLLMWrapper(base_llm)
 ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text") 
 embeddings = LangchainEmbeddingsWrapper(ollama_embeddings)
 
@@ -35,7 +46,7 @@ split_docs = text_splitter.split_documents(docs)
 generator = TestsetGenerator(llm = llm, embedding_model = embeddings)
 
 # Generate test dataset
-testset_size = 1000
+testset_size = 10
 dataset = generator.generate_with_langchain_docs(split_docs, testset_size=testset_size, raise_exceptions=False)
 
 # Save results
