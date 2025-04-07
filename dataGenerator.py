@@ -5,6 +5,12 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from ragas.llms import LangchainLLMWrapper
 from ragas.testset import TestsetGenerator
 
+
+import warnings
+from langchain_core._api.deprecation import LangChainDeprecationWarning
+
+warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
+
 # Initialize Ollama components
 ollama_llm = ChatOllama(model="llama3.1", temperature=0.2)
 ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text") 
