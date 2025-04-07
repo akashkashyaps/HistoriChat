@@ -27,9 +27,10 @@ loader3 = TextLoader("/home/akash/HistoriChat/data/William_the_Conqueror.txt")
 # Load the documents
 loaded_documents1 = loader1.load()
 loaded_documents2 = loader2.load()
+loaded_documents3 = loader3.load()
 
 # Combine the loaded documents
-loaded_documents = loaded_documents1 + loaded_documents2
+loaded_documents = loaded_documents1 + loaded_documents2 + loaded_documents3
 
 # ✅ Confirm document loading
 print(f"[INFO] Loaded {len(loaded_documents)} documents.")
