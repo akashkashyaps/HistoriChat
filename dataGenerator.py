@@ -1,5 +1,5 @@
 from langchain_community.document_loaders import DirectoryLoader
-from langchain_ollama import ChatOllama
+from langchain_community.chat_models import ChatOllama
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from ragas.llms import LangchainLLMWrapper
@@ -30,13 +30,13 @@ split_docs = text_splitter.split_documents(docs)
 
 # Initialize test generator with Ollama components
 generator = TestsetGenerator(
-    ollama_llm,
-    embedding_model = ollama_embeddings
+    llm = ollama_llm,
+    embeddings = ollama_embeddings
 )
 
 # Generate test dataset
 testset_size = 1000
-dataset = generator.generate_with_langchain_docs(split_docs, testset_size=testset_size, raise_exceptions=False)
+dataset = generator.generate_with_langchain_docs(split_docs, testset_size=testset_size)
 
 # Save results
 dataset.to_pandas().to_csv("testset_v1.csv", index=False)
