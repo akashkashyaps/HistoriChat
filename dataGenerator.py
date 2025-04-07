@@ -31,6 +31,11 @@ loaded_documents2 = loader2.load()
 # Combine the loaded documents
 loaded_documents = loaded_documents1 + loaded_documents2
 
+# ✅ Confirm document loading
+print(f"[INFO] Loaded {len(loaded_documents)} documents.")
+total_chars = sum(len(doc.page_content) for doc in loaded_documents)
+print(f"[INFO] Total characters loaded: {total_chars}")
+
 # Text splitter
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1900, chunk_overlap=128) 
 
