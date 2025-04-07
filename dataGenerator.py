@@ -12,7 +12,7 @@ from langchain_core._api.deprecation import LangChainDeprecationWarning
 warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
 
 # Initialize Ollama components
-ollama_llm = ChatOllama(model="llama3.1", temperature=0.2)
+ollama_llm = ChatOllama(model="qwen2.5:7b-instruct-q4_0", temperature=0.2)
 ollama_embeddings = OllamaEmbeddings(model="nomic-embed-text") 
 
 
@@ -31,7 +31,7 @@ split_docs = text_splitter.split_documents(docs)
 # Initialize test generator with Ollama components
 generator = TestsetGenerator(
     ollama_llm,
-    ollama_embeddings
+    embedding_model = ollama_embeddings
 )
 
 # Generate test dataset
