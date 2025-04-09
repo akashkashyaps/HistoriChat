@@ -46,11 +46,31 @@ recreated_splits = text_splitter.split_documents(loaded_documents)
 # Initialize test generator with Ollama components
 generator = TestsetGenerator(llm = llm, embedding_model= embeddings)
 
-# Generate test dataset
+# Generate test dataset with error handling
 testset_size = 1000
-dataset = generator.generate_with_langchain_docs(recreated_splits, testset_size=testset_size, raise_exceptions=False)
 
-# Save results
-dataset.to_pandas().to_csv("testset_v2.csv", index=False)
+try:
+    dataset = generator.generate_with_langchain_docs(
+        recreated_splits, 
+        testset_size=testset_size, 
+        raise_exceptions=False  # This ensures exceptions are not raised
+    )
+except KeyError as e:
+    print(f"[ERROR] KeyError encountered: {e}. Skipping problematic entry.")
+    # Optionally, log the error or handle it in a specific way
+except TypeError as e:
+    print(f"[ERROR] TypeError encountered: {e}. Skipping problematic entry.")
+    # Optionally, log the error or handle it in a specific way
+except Exception as e:
+    print(f"[ERROR] Unexpected error encountered: {e}. Skipping problematic entry.")
+    # Optionally, log the error or handle it in a specific way
+
+# Save results if dataset generation was successful
+if 'dataset' in locals():
+    dataset.to_pandas().to_csv("testset_v2.csv", index=False)
+    print("[INFO] Dataset saved successfully.")
+else:
+    print("[INFO] Dataset generation failed. No data to save.")
+
 
 
