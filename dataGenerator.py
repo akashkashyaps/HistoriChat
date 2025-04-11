@@ -7,9 +7,14 @@ from ragas.embeddings import LangchainEmbeddingsWrapper
 from ragas.testset import TestsetGenerator
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import TextLoader
-
 import warnings
 from langchain_core._api.deprecation import LangChainDeprecationWarning
+import pandas as pd
+import os
+from datetime import datetime
+from tqdm import tqdm
+import json
+import signal
 
 warnings.filterwarnings("ignore", category=LangChainDeprecationWarning)
 
@@ -46,48 +51,55 @@ recreated_splits = text_splitter.split_documents(loaded_documents)
 # Initialize test generator with Ollama components
 generator = TestsetGenerator(llm = llm, embedding_model= embeddings)
 
-# Define batch size
-batch_size = 100  # Number of samples to process per batch
-testset_size = 1000  # Total number of samples to generate
+# Generation parameters
+TARGET_SAMPLES = 1000
+BATCH_SIZE = 50  # Reduced for better error recovery
+num_batches = (TARGET_SAMPLES + BATCH_SIZE - 1) // BATCH_SIZE
 
-# Calculate the number of batches
-num_batches = (testset_size + batch_size - 1) // batch_size  # Ceiling division
+# Initialize progress bar
+pbar = tqdm(total=TARGET_SAMPLES, desc="Generating QnA Pairs", unit="sample")
 
-# Initialize an empty list to store results
-all_results = []
+# Output file configuration
+OUTPUT_CSV = "testset_v2.csv"
+header_written = False
 
-# Process each batch
-for batch_idx in range(num_batches):
-    print(f"[INFO] Processing batch {batch_idx + 1}/{num_batches}...")
-    
-    # Calculate start and end indices for the current batch
-    start_idx = batch_idx * batch_size
-    end_idx = min(start_idx + batch_size, testset_size)
-    
-    try:
-        # Generate the current batch
-        batch_dataset = generator.generate_with_langchain_docs(
-            recreated_splits, 
-            testset_size=(end_idx - start_idx),  # Size of the current batch
-            raise_exceptions=False  # Skip errors within the batch
-        )
+try:
+    for batch_idx in range(num_batches):
+        current_target = min(BATCH_SIZE, TARGET_SAMPLES - (batch_idx * BATCH_SIZE))
         
-        # Append the batch results to the main list
-        all_results.append(batch_dataset)
-        print(f"[INFO] Successfully processed batch {batch_idx + 1}/{num_batches}.")
-    
-    except Exception as e:
-        # Log the error and continue with the next batch
-        print(f"[ERROR] Failed to process batch {batch_idx + 1}/{num_batches}: {e}")
-        continue
+        try:
+            # Generate batch
+            batch_dataset = generator.generate_with_langchain_docs(
+                recreated_splits,
+                testset_size=current_target,
+                raise_exceptions=False
+            )
+            
+            # Convert to DataFrame
+            batch_df = batch_dataset.to_pandas()
+            
+            # Save immediately with progress update
+            if not batch_df.empty:
+                # Write header only once
+                write_header = not os.path.exists(OUTPUT_CSV) or os.stat(OUTPUT_CSV).st_size == 0
+                batch_df.to_csv(OUTPUT_CSV, mode='a', header=write_header, index=False)
+                
+                # Update progress
+                samples_generated = len(batch_df)
+                pbar.update(samples_generated)
+                
+        except Exception as e:
+            print(f"\n[ERROR] Batch {batch_idx+1} failed: {str(e)[:200]}")
+            continue
 
-# Combine all batch results into a single dataset
-if all_results:
-    final_dataset = all_results[0].concat(all_results[1:]) if len(all_results) > 1 else all_results[0]
-    final_dataset.to_pandas().to_csv("testset_v2.csv", index=False)
-    print("[INFO] Dataset saved successfully.")
-else:
-    print("[INFO] No data generated. Dataset is empty.")
+finally:
+    pbar.close()
+    print(f"\n[COMPLETED] Final dataset saved to {OUTPUT_CSV}")
+
+# Optional: Load and verify final dataset
+if os.path.exists(OUTPUT_CSV):
+    final_df = pd.read_csv(OUTPUT_CSV)
+    print(f"\n[FINAL STATS] Total samples generated: {len(final_df)}")
 
 
 
