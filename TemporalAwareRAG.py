@@ -257,6 +257,3 @@ for query in test_queries:
     
     print("\n=== Supporting Context ===")
     print(response["context"][:500] + "...")  # Show first 500 chars of context
-    
-    print("\n=== Source Documents ===")
-    print(", ".join(set(response["source_docs"])))
