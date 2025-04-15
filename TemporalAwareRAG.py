@@ -200,7 +200,8 @@ def get_rag_response(query: str, llm, vectorstore, cross_encoder) -> Dict[str, A
     top4 = scored_results[:4]
 
     # Prepare context
-    context = "\n\n".join([doc.page_content for doc, _ in top4])
+    context = "\n\n".join([doc.page_content for ((doc, _), _) in top4])
+
     
     # Generate response
     chain = prompt | llm | StrOutputParser()
