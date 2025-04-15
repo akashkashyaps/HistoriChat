@@ -209,8 +209,7 @@ def get_rag_response(query: str, llm, vectorstore, cross_encoder) -> Dict[str, A
     
     return {
         "answer": answer,
-        "context": context,
-        "source_docs": [doc.metadata["source"] for doc, _ in top4]
+        "context": context
     }
 
 # --- Execution Pipeline ---
