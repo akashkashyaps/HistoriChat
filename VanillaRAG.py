@@ -27,9 +27,10 @@ loader3 = TextLoader("William_the_Conqueror.txt")
 # Load the documents
 loaded_documents1 = loader1.load()
 loaded_documents2 = loader2.load()
+loaded_documents3 = loader3.load()
 
 # Combine the loaded documents
-loaded_documents = loaded_documents1 + loaded_documents2
+loaded_documents = loaded_documents1 + loaded_documents2 + loaded_documents3
 
 # Text splitter
 text_splitter = RecursiveCharacterTextSplitter(chunk_size=1900, chunk_overlap=128) 
@@ -40,8 +41,8 @@ recreated_splits = text_splitter.split_documents(loaded_documents)
 # Initialize Chroma vector store
 import os
 home_directory = os.path.expanduser("~")
-persist_directory = os.path.join(home_directory, "HSv2", "vecdb")
-vectorstore = Chroma(persist_directory=persist_directory, embedding_function=OllamaEmbeddings(model="nomic-embed-text"), collection_name="ROBIN-6")
+persist_directory = os.path.join(home_directory, "Historichat")
+vectorstore = Chroma(persist_directory=persist_directory, embedding_function=OllamaEmbeddings(model="nomic-embed-text"), collection_name="HC-3")
 
 # Initialize retrievers
 retriever_vanilla = vectorstore.as_retriever(search_type="similarity", search_kwargs={"k": 4})
@@ -104,7 +105,7 @@ for model in models:
     print(f"Running model: {model}")
     
     # Initialize the LLM
-    llm = ChatOllama(model=model, temperature=0.2, frequency_penalty=0.5)
+    llm = ChatOllama(model=model, temperature=0.1, frequency_penalty=0.5)
     
     # Create empty lists to store the results, context, and the time taken
     results = []

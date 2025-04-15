@@ -6,3 +6,8 @@ langchain-chroma
 langchain-ollama
 ollama
 langchain_community
+sentence_transformers
+yfiles_jupyter_graphs
+tiktoken
+neo4j
+langchain-experimental
