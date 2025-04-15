@@ -11,6 +11,9 @@ from langchain_ollama import ChatOllama
 from langchain_ollama import OllamaEmbeddings
 from langchain_core.output_parsers import StrOutputParser
 from sentence_transformers import CrossEncoder
+import pandas as pd
+from tqdm import tqdm
+import time
 
 # Initialize Spacy NLP
 nlp = spacy.load("en_core_web_sm")
@@ -236,24 +239,42 @@ print("Vectorstore created and saved.")
 
 # Initialize models
 cross_encoder = CrossEncoder('cross-encoder/ms-marco-MiniLM-L6-v2')
-llm = ChatOllama(model="llama3.1", temperature=0.2, frequency_penalty=0.5)
 
-# Test queries
-test_queries = [
-    "tell me about alfred the great",
-    "what happened before 1066",
-    "what happened after 1066",
-    "battle of hastings"
-]
+# Load test questions and ground truths
+test = pd.read_csv("testset_v2.csv")
+questions = test["user_input"].tolist()
+ground_truths = test["reference"].tolist()
 
-for query in test_queries:
-    print("\n" + "="*40)
-    print(f"Processing query: {query}")
+# List of model names to test
+models = ["llama3.1:8b-instruct-q4_0", "qwen2.5:7b-instruct-q4_0", "gemma2:9b-instruct-q4_0", "phi3.5:3.8b-mini-instruct-q4_0", "mistral:7b-instruct-q4_0", "lly/InternLM3-8B-Instruct:8b-instruct-q4_0"]
+
+# Evaluate each model
+for model_name in models:
+    print(f"\n=== Running model: {model_name} ===")
     
-    response = get_rag_response(query, llm, vectorstore, cross_encoder)
+    llm = ChatOllama(model=model_name, temperature=0.1, frequency_penalty=0.5)
     
-    print("\n=== Final Answer ===")
-    print(response["answer"])
-    
-    print("\n=== Supporting Context ===")
-    print(response["context"][:500] + "...")  # Show first 500 chars of context
+    results = []
+    contexts = []
+    chain_times = []
+
+    for question in tqdm(questions, desc=f"Processing with {model_name}"):
+        start = time.time()
+        rag_response = get_rag_response(question, llm, vectorstore, cross_encoder)
+        end = time.time()
+
+        chain_times.append(end - start)
+        results.append(rag_response["answer"])
+        contexts.append(rag_response["context"])
+
+    # Save results to CSV
+    df = pd.DataFrame({
+        "Question": questions,
+        "Answer": results,
+        "Context": contexts,
+        "Ground_Truth": ground_truths,
+        "Chain_Time": chain_times
+    })
+
+    df.to_csv(f"Results_{model_name.replace('/', '_')}.csv", index=False)
+    print(f"Saved: Results_{model_name.replace('/', '_')}.csv")

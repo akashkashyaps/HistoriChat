@@ -96,9 +96,9 @@ def get_rag_response(query: str, llm) -> Dict[str, Any]:
     }
 
 # Create test set
-test = pd.read_csv('abcd.csv')
-questions = test['question'].tolist()
-ground_truths = test['ground_truth'].tolist()
+test = pd.read_csv("testset_v2.csv")
+questions = test["user_input"].tolist()
+ground_truths = test["reference"].tolist()
 
 # Loop through each model
 for model in models:
@@ -136,4 +136,4 @@ for model in models:
     })
     
     # Save the results to a CSV file
-    df.to_csv(f'Output_{model.replace("/", "_")}.csv', index=False)
+    df.to_csv(f'Vanilla_{model.replace("/", "_")}.csv', index=False)
